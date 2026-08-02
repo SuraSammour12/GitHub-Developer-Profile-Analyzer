@@ -4,6 +4,11 @@ A **multi-agent** LangGraph system that analyzes GitHub developers using real AP
 
 > Built with LangGraph, Groq (Llama 3.3 70B), and Streamlit.
 
+
+<p align="center">
+  <a href="https://gitscope.streamlit.app/"><img src="https://img.shields.io/badge/🚀_Live_Demo-GitScope-0d1117?style=for-the-badge&logo=streamlit&logoColor=white" alt="Live Demo"></a>
+</p>
+
 ---
 
 ## Demo Results
@@ -122,7 +127,7 @@ If the report fails, it goes back to the Analyst with specific feedback - a genu
 ### Installation
 
 ```bash
-git clone https://github.com/SuraSammour12/gitscope.git
+git clone https://github.com/SuraSammour12/GitHub-Developer-Profile-Analyzer.git
 cd gitscope
 
 pip install -r requirements.txt
