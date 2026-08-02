@@ -1,11 +1,10 @@
-"""
-test_tools.py - Tests for DevPulse GitHub analysis tools.
-Unit tests (mocked) + Live API tests.
-"""
+"""Tests for GitScope - tools, routing, and agent structure."""
+
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pytest
 from unittest.mock import patch, MagicMock
-from langgraph.graph import END
 
 import tools
 import agent
@@ -61,6 +60,31 @@ class TestAnalyzeLanguages:
         assert "JavaScript" in result
 
 
+class TestCheckRepoHealth:
+    @patch("tools._github_get")
+    def test_health_check(self, mock_get):
+        def side_effect(endpoint):
+            if "/repos?" in endpoint:
+                return (200, [
+                    {"name": "repo1", "description": "Has desc",
+                     "license": {"spdx_id": "MIT"}, "topics": ["python"],
+                     "fork": False},
+                    {"name": "repo2", "description": None,
+                     "license": None, "topics": [],
+                     "fork": False},
+                ])
+            elif "/readme" in endpoint:
+                if "repo1" in endpoint:
+                    return (200, {})
+                return (404, None)
+            return (200, {})
+
+        mock_get.side_effect = side_effect
+        result = tools.check_repo_health.invoke({"username": "testuser"})
+        assert "HEALTH CHECK" in result
+        assert "repo2" in result  # should appear in missing lists
+
+
 class TestGetActivityStats:
     @patch("tools._github_get")
     def test_activity_summary(self, mock_get):
@@ -73,31 +97,94 @@ class TestGetActivityStats:
         assert "Push Events: 1" in result
 
 
-class TestAgentRouting:
-    def test_tool_calls_continue(self):
-        mock_msg = MagicMock()
-        mock_msg.tool_calls = [{"name": "get_user_profile"}]
-        state = {"messages": [mock_msg]}
-        assert agent.should_continue(state) == "tools"
+class TestSupervisorRouting:
+    def test_routes_to_scout_first(self):
+        state = {"user_tier": "", "report": "", "review_passed": False, "revision_count": 0}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "scout"
 
-    def test_no_tool_calls_ends(self):
-        mock_msg = MagicMock()
-        mock_msg.tool_calls = []
-        state = {"messages": [mock_msg]}
-        assert agent.should_continue(state) == END
+    def test_stops_on_not_found(self):
+        state = {"user_tier": "not_found", "report": "", "review_passed": False, "revision_count": 0}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "FINISH"
 
-    def test_graph_compiles(self):
+    def test_routes_to_analyst_after_scout(self):
+        state = {"user_tier": "active", "report": "", "review_passed": False, "revision_count": 0}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "analyst"
+
+    def test_routes_to_reviewer_after_report(self):
+        state = {"user_tier": "active", "report": '{"score": 7}', "review_passed": False, "revision_count": 0}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "reviewer"
+
+    def test_finishes_after_review_passed(self):
+        state = {"user_tier": "active", "report": '{"score": 7}', "review_passed": True, "revision_count": 0}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "FINISH"
+
+    def test_finishes_after_max_revisions(self):
+        state = {"user_tier": "active", "report": '{"score": 7}', "review_passed": False, "revision_count": agent.MAX_REVISIONS}
+        result = agent.supervisor(state)
+        assert result["next_agent"] == "FINISH"
+
+
+class TestScoutAgent:
+    @patch("tools._github_get")
+    def test_scout_not_found(self, mock_get):
+        mock_get.return_value = (404, None)
+        state = {"username": "nonexistent", "trace": [], "raw_data": {}}
+        result = agent.scout_agent(state)
+        assert result["user_tier"] == "not_found"
+
+    @patch("tools._github_get")
+    def test_scout_new_user(self, mock_get):
+        mock_get.return_value = (200, {
+            "login": "newbie", "name": "Newbie", "bio": "", "location": "",
+            "company": "", "followers": 2, "following": 5, "public_repos": 3,
+            "created_at": "2025-01-01T00:00:00Z", "avatar_url": "",
+            "blog": "", "twitter_username": "", "hireable": None,
+        })
+        state = {"username": "newbie", "trace": [], "raw_data": {}}
+        result = agent.scout_agent(state)
+        assert result["user_tier"] == "new"
+
+    @patch("tools._github_get")
+    def test_scout_active_user(self, mock_get):
+        mock_get.return_value = (200, {
+            "login": "pro", "name": "Pro Dev", "bio": "I code",
+            "location": "SF", "company": "BigCo", "followers": 500,
+            "following": 50, "public_repos": 45,
+            "created_at": "2018-01-01T00:00:00Z", "avatar_url": "",
+            "blog": "", "twitter_username": "", "hireable": True,
+        })
+        state = {"username": "pro", "trace": [], "raw_data": {}}
+        result = agent.scout_agent(state)
+        assert result["user_tier"] == "active"
+
+
+class TestGraphStructure:
+    def test_graph_builds(self):
         app = agent.build_agent()
         assert app is not None
 
+    def test_graph_has_all_nodes(self):
+        app = agent.build_agent()
+        nodes = list(app.get_graph().nodes)
+        assert "scout" in nodes
+        assert "analyst" in nodes
+        assert "reviewer" in nodes
+        assert "supervisor" in nodes
 
-class TestLiveGitHubAPI:
-    """Real API tests. Skip with: pytest -k 'not Live' """
 
-    def test_live_profile_torvalds(self):
-        result = tools.get_user_profile.invoke({"username": "torvalds"})
-        assert "torvalds" in result
-
-    def test_live_profile_not_found(self):
-        result = tools.get_user_profile.invoke({"username": "zzzxxx999notreal888"})
-        assert "not found" in result
+class TestAnalysisState:
+    def test_state_fields(self):
+        annotations = agent.AnalysisState.__annotations__
+        required = [
+            "messages", "username", "user_tier", "profile_summary",
+            "tools_called", "raw_data", "report",
+            "review_passed", "review_feedback", "revision_count",
+            "trace", "next_agent",
+        ]
+        for field in required:
+            assert field in annotations, f"Missing: {field}"
