@@ -151,7 +151,7 @@ gitscope/
 ├── app.py              # Streamlit UI with agent trace panel
 ├── agent.py            # Multi-agent LangGraph: Scout + Analyst + Reviewer
 ├── tools.py            # 6 tools calling real GitHub API
-├── test_tools.py       # 30 tests: tools, routing, scout decisions, graph
+├── test_tools.py       # 18 tests: tools, routing, scout decisions, graph
 ├── requirements.txt
 ├── .env.example
 ├── screenshots/
@@ -170,7 +170,7 @@ gitscope/
 python -m pytest test_tools.py -v -p no:anyio
 ```
 
-30 tests covering:
+18 tests covering:
 - GitHub tools with mocked API responses
 - Supervisor routing (6 different paths)
 - Scout tier decisions (not_found, new, active)
