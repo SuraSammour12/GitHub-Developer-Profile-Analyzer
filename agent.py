@@ -52,9 +52,8 @@ class AnalysisState(TypedDict):
 
 
 MAX_REVISIONS = 1
-MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-specdec")
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 FALLBACK_MODEL = "llama-3.1-8b-instant"
-
 def _get_llm(model: str | None = None) -> ChatGroq:
     return ChatGroq(
         model=model or MODEL_NAME,
