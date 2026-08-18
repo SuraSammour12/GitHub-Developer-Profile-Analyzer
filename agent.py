@@ -52,9 +52,8 @@ class AnalysisState(TypedDict):
 
 
 MAX_REVISIONS = 1
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
-FALLBACK_MODEL = "openai/gpt-oss-20b"
-
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-specdec")
+FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 def _get_llm(model: str | None = None) -> ChatGroq:
     return ChatGroq(
